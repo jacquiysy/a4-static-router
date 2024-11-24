@@ -31,6 +31,10 @@ public:
 
     void queuePacket(uint32_t ip, const Packet& packet, const std::string& iface) override;
 
+    void sendArpRequest(uint32_t ip);
+    
+    void sendIcmpHostUnreachable(const Packet& packet, const std::string& iface);
+
 private:
     void loop();
 
