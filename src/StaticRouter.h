@@ -28,6 +28,10 @@ private:
     std::shared_ptr<IPacketSender> packetSender;
 
     std::unique_ptr<IArpCache> arpCache;
+
+    bool isForMe(uint32_t ip);
+    void sendIp(const Packet& packet, const std::string& iface, uint32_t ip, uint16_t ethType);
+    void sendEthernetFrame(const mac_addr& srcMac, const mac_addr& destMac, uint16_t ethType, const Packet& packet) ;
 };
 
 

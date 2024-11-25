@@ -1,29 +1,26 @@
 #include "ArpCache.h"
 
-#include <thread>
 #include <cstring>
 #include <spdlog/spdlog.h>
+#include <thread>
 
 #include "protocol.h"
 #include "utils.h"
 
-
 ArpCache::ArpCache(std::chrono::milliseconds timeout, std::shared_ptr<IPacketSender> packetSender, std::shared_ptr<IRoutingTable> routingTable)
-: timeout(timeout)
-, packetSender(std::move(packetSender))
-, routingTable(std::move(routingTable)) {
+    : timeout(timeout), packetSender(std::move(packetSender)), routingTable(std::move(routingTable)) {
     thread = std::make_unique<std::thread>(&ArpCache::loop, this);
 }
 
 ArpCache::~ArpCache() {
     shutdown = true;
-    if (thread && thread->joinable()) {
+    if(thread && thread->joinable()) {
         thread->join();
     }
 }
 
 void ArpCache::loop() {
-    while (!shutdown) {
+    while(!shutdown) {
         tick();
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
@@ -32,14 +29,14 @@ void ArpCache::loop() {
 void ArpCache::tick() {
     std::unique_lock lock(mutex);
     // TODO: Your code here
-    for (auto it = requests.begin(); it != requests.end();) {
+    for(auto it = requests.begin(); it != requests.end();) {
         ArpRequest& request = it->second;
 
-        if (std::chrono::steady_clock::now() - request.lastSent >= std::chrono::seconds(1)) {
-            if (request.timesSent >= 7) {
+        if(std::chrono::steady_clock::now() - request.lastSent >= std::chrono::seconds(1)) {
+            if(request.timesSent >= 7) {
                 spdlog::warn("ARP request for IP {} failed after 7 retries. Sending ICMP Host Unreachable.", it->first);
 
-                for (const auto& awaitingPacket : request.awaitingPackets) {
+                for(auto& awaitingPacket : request.awaitingPackets) {
                     sendIcmpHostUnreachable(awaitingPacket.packet, awaitingPacket.iface);
                 }
 
@@ -67,14 +64,14 @@ void ArpCache::addEntry(uint32_t ip, const mac_addr& mac) {
     std::unique_lock lock(mutex);
 
     // TODO: Your code below
-    ArpEntry entry = {ip, mac, std::chrono::steady_clock::now()};
+    ArpEntry entry = { ip, mac, std::chrono::steady_clock::now() };
     entries[ip] = entry;
 
     auto it = requests.find(ip);
-    if (it != requests.end()) {
+    if(it != requests.end()) {
         ArpRequest& request = it->second;
 
-        for (const auto& awaitingPacket : request.awaitingPackets) {
+        for(auto& awaitingPacket : request.awaitingPackets) {
             auto* ethHeader = reinterpret_cast<sr_ethernet_hdr_t*>(awaitingPacket.packet.data());
             memcpy(ethHeader->ether_dhost, mac.data(), ETHER_ADDR_LEN);
 
@@ -93,29 +90,29 @@ std::optional<mac_addr> ArpCache::getEntry(uint32_t ip) {
 
     // TODO: Your code below
     auto it = entries.find(ip);
-    if (it != entries.end()) {
+    if(it != entries.end()) {
         return it->second.mac;
     }
 
-    return std::nullopt; // Placeholder
+    return std::nullopt;  // Placeholder
 }
 
 void ArpCache::queuePacket(uint32_t ip, const Packet& packet, const std::string& iface) {
     std::unique_lock lock(mutex);
 
     // TODO: Your code below
-    if (requests.find(ip) == requests.end()) {
-        requests[ip] = ArpRequest{ip, std::chrono::steady_clock::now(), 0, {}};
+    if(requests.find(ip) == requests.end()) {
+        requests[ip] = ArpRequest { ip, std::chrono::steady_clock::now(), 0, {} };
     }
 
-    requests[ip].awaitingPackets.push_back({packet, iface});
+    requests[ip].awaitingPackets.push_back({ packet, iface });
 }
 
 void ArpCache::sendArpRequest(uint32_t ip) {
     spdlog::info("Sending ARP request for IP: {}", ip);
 
     auto route = routingTable->getRoutingEntry(ip);
-    if (!route) {
+    if(!route) {
         spdlog::error("No route found for ARP request for IP: {}", ip);
         return;
     }
@@ -123,15 +120,15 @@ void ArpCache::sendArpRequest(uint32_t ip) {
     auto ifaceInfo = routingTable->getRoutingInterface(route->iface);
 
     auto ethHeader = createEthernetHeader(
-        ifaceInfo.mac, 
-        mac_addr{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}, 
+        ifaceInfo.mac,
+        mac_addr { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF },
         ethertype_arp);
 
     auto arpHeader = createArpHeader(
-        arp_op_request, 
-        ifaceInfo.mac, 
-        ifaceInfo.ip, 
-        mac_addr{}, 
+        arp_op_request,
+        ifaceInfo.mac,
+        ifaceInfo.ip,
+        mac_addr {},
         ip);
 
     auto request = createEthernetFrame(ethHeader, &arpHeader, sizeof(arpHeader));
@@ -139,11 +136,11 @@ void ArpCache::sendArpRequest(uint32_t ip) {
     packetSender->sendPacket(request, route->iface);
 }
 
-void ArpCache::sendIcmpHostUnreachable(const Packet& packet, const std::string& iface) {
+void ArpCache::sendIcmpHostUnreachable(Packet& packet, const std::string& iface) {
     auto ifaceInfo = routingTable->getRoutingInterface(iface);
     auto* ipHeader = reinterpret_cast<sr_ip_hdr_t*>(packet.data() + ETHERNET_HEADER_SIZE);
 
-    auto icmpHeader = createIcmpType3Header(3, 1, packet); // Type 3, Code 1: Host Unreachable
+    auto icmpHeader = createIcmpType3Header(3, 1, packet);  // Type 3, Code 1: Host Unreachable
     auto ipHeaderResponse = createIpHeader(
         sizeof(sr_ip_hdr_t) + sizeof(sr_icmp_t3_hdr_t),
         ip_protocol_icmp,
@@ -158,9 +155,9 @@ void ArpCache::sendIcmpHostUnreachable(const Packet& packet, const std::string& 
             ethertype_ip),
         &icmpHeader, sizeof(icmpHeader));
 
-    icmpPacket.insert(icmpPacket.begin() + ETHERNET_HEADER_SIZE, 
-                      reinterpret_cast<uint8_t*>(&ipHeaderResponse),
-                      reinterpret_cast<uint8_t*>(&ipHeaderResponse) + sizeof(sr_ip_hdr_t));
+    icmpPacket.insert(icmpPacket.begin() + ETHERNET_HEADER_SIZE,
+        reinterpret_cast<uint8_t*>(&ipHeaderResponse),
+        reinterpret_cast<uint8_t*>(&ipHeaderResponse) + sizeof(sr_ip_hdr_t));
 
     packetSender->sendPacket(icmpPacket, iface);
 }

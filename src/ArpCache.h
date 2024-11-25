@@ -1,20 +1,20 @@
 #ifndef ARPCACHE_H
 #define ARPCACHE_H
 
-#include <vector>
 #include <array>
 #include <chrono>
-#include <set>
-#include <unordered_map>
-#include <thread>
-#include <optional>
 #include <memory>
 #include <mutex>
+#include <optional>
+#include <set>
+#include <thread>
+#include <unordered_map>
+#include <vector>
 
 #include "IArpCache.h"
 #include "IPacketSender.h"
-#include "RouterTypes.h"
 #include "IRoutingTable.h"
+#include "RouterTypes.h"
 
 class ArpCache : public IArpCache {
 public:
@@ -32,8 +32,8 @@ public:
     void queuePacket(uint32_t ip, const Packet& packet, const std::string& iface) override;
 
     void sendArpRequest(uint32_t ip);
-    
-    void sendIcmpHostUnreachable(const Packet& packet, const std::string& iface);
+
+    void sendIcmpHostUnreachable(Packet& packet, const std::string& iface);
 
 private:
     void loop();
@@ -51,6 +51,4 @@ private:
     std::unordered_map<ip_addr, ArpRequest> requests;
 };
 
-
-
-#endif //ARPCACHE_H
+#endif  // ARPCACHE_H
