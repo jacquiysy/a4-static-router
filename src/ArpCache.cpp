@@ -10,7 +10,7 @@
 ArpCache::ArpCache(std::chrono::milliseconds timeout, std::shared_ptr<IPacketSender> packetSender, std::shared_ptr<IRoutingTable> routingTable)
     : timeout(timeout), packetSender(std::move(packetSender)), routingTable(std::move(routingTable)) {
     thread = std::make_unique<std::thread>(&ArpCache::loop, this);
-    
+
 }
 
 ArpCache::~ArpCache() {
@@ -128,7 +128,7 @@ void ArpCache::sendArpRequest(uint32_t ip) {
     auto arpHeader = createArpHeader(
         arp_op_request,
         ifaceInfo.mac,
-        ifaceInfo.ip,
+        ntohl(ifaceInfo.ip),
         mac_addr {},
         ip);
 
@@ -145,7 +145,7 @@ void ArpCache::sendIcmpHostUnreachable(Packet& packet, const std::string& iface)
     auto ipHeaderResponse = createIpHeader(
         sizeof(sr_ip_hdr_t) + sizeof(sr_icmp_t3_hdr_t),
         ip_protocol_icmp,
-        ifaceInfo.ip,
+        ntohl(ifaceInfo.ip),
         ntohl(ipHeader->ip_src),
         INIT_TTL);
 

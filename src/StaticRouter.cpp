@@ -142,6 +142,7 @@ void StaticRouter::handlePacket(std::vector<uint8_t> packet, std::string iface)
         // Handle IP packet
         Packet packet_to_send;
         uint32_t ip_to_send;
+        std::optional<mac_addr> mac_to_send = std::nullopt;
         uint32_t dstIp = ntohl(ipHdr->ip_dst);
         if (ipHdr->ip_ttl == 0) {
             spdlog::info("IP packet has TTL 0");
@@ -149,6 +150,8 @@ void StaticRouter::handlePacket(std::vector<uint8_t> packet, std::string iface)
         }
         if (isForMe(dstIp)) {
             ip_to_send = ntohl(ipHdr->ip_src);
+            mac_to_send = make_mac_addr(reinterpret_cast<sr_ethernet_hdr_t*>(packet.data())->ether_shost);
+
             spdlog::info("DstIP is for me");
             if (ipHdr->ip_p == ip_protocol_icmp) {
                 spdlog::info("IP protocol is ICMP");
@@ -180,6 +183,7 @@ void StaticRouter::handlePacket(std::vector<uint8_t> packet, std::string iface)
             spdlog::info("DstIP is not for me");
             if(ipHdr->ip_ttl == 1) {
                 ip_to_send = ntohl(ipHdr->ip_src);
+                mac_to_send = make_mac_addr(reinterpret_cast<sr_ethernet_hdr_t*>(packet.data())->ether_shost);
                 spdlog::info("IP TTL is 1, send ICMP Exceed");
                 packet_to_send = makeIcmpTtlExceed(packet, dstIp);
             } else {
@@ -195,7 +199,7 @@ void StaticRouter::handlePacket(std::vector<uint8_t> packet, std::string iface)
         } else {
             iface = route->iface;
         }
-        sendIp(packet_to_send, outgoing_iface, ip_to_send, ethertype_ip);
+        sendIp(packet_to_send, outgoing_iface, ip_to_send, ethertype_ip, mac_to_send);
     }
 }
 
@@ -229,8 +233,12 @@ void StaticRouter::sendArpReply(const mac_addr sender_mac, uint32_t sender_ip, c
     sendEthernetFrame(iface, sender_mac, ethertype_arp, arp_packet);
 }
 
-void StaticRouter::sendIp(const Packet& packet, const std::string& iface, uint32_t ip, uint16_t ethType) {
+void StaticRouter::sendIp(const Packet& packet, const std::string& iface, uint32_t ip, uint16_t ethType, std::optional<mac_addr> nextMac) {
     spdlog::info("Send IP");
+    if (nextMac) {
+        sendEthernetFrame(iface, *nextMac, ethType, packet);
+        return;
+    }
     auto nextHopMac = arpCache->getEntry(ip);
     if (!nextHopMac) {
         arpCache->queuePacket(ip, packet, iface);
