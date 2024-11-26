@@ -57,15 +57,15 @@ Packet makeIcmpUnreachable(const Packet& incoming_packet, uint8_t code, uint32_t
     return ip_packet;
 }
 
-Packet makeIcmpTtlExceed(const Packet& incoming_packet, uint32_t ip){
-    spdlog::info("Make Icmp TTL Exceeded, ip: {}", ip);
+Packet makeIcmpTtlExceed(const Packet& incoming_packet, uint32_t src_ip){
+    spdlog::info("Make Icmp TTL Exceeded, ip: {}", src_ip);
 
     const sr_ip_hdr_t* ip_hdr = reinterpret_cast<const sr_ip_hdr_t*>(incoming_packet.data() + ETHERNET_HEADER_SIZE);
     auto icmp_header = createIcmpType3Header(icmp_type_ttl_exceeded, icmp_code_ttl_exceeded, incoming_packet);
     Packet icmp_packet(sizeof(sr_icmp_t3_hdr_t));
     memcpy(icmp_packet.data(), &icmp_header, sizeof(sr_icmp_t3_hdr_t));
 
-    Packet ip_packet = createIpPacket(icmp_packet, ip_protocol_icmp, ip, ntohl(ip_hdr->ip_src), INIT_TTL);
+    Packet ip_packet = createIpPacket(icmp_packet, ip_protocol_icmp, src_ip, ntohl(ip_hdr->ip_src), INIT_TTL);
     return ip_packet;
 }
 
@@ -121,7 +121,7 @@ void StaticRouter::handlePacket(std::vector<uint8_t> packet, std::string iface)
             // ARP request
             uint32_t targetIp = ntohl(arpHdr->ar_tip);
             auto myMac = routingTable->getRoutingInterface(iface).mac;
-            if (targetIp == routingTable->getRoutingInterface(iface).ip) {
+            if (targetIp == ntohl(routingTable->getRoutingInterface(iface).ip)) {
                 // Construct ARP reply
                 sendArpReply(senderMac, senderIp, iface, myMac, targetIp);
             }
@@ -132,7 +132,7 @@ void StaticRouter::handlePacket(std::vector<uint8_t> packet, std::string iface)
         sr_ip_hdr_t ip_header;
         sr_ip_hdr_t* ipHdr = reinterpret_cast<sr_ip_hdr_t*>(packet.data() + sizeof(sr_ethernet_hdr_t));
         memcpy(&ip_header, ipHdr, sizeof(sr_ip_hdr_t));
-        decodeIPHeader(&ip_header);
+        // decodeIPHeader(&ip_header);
         uint16_t ip_checksum = ip_header.ip_sum;
         ip_header.ip_sum = 0;
         if (cksum(&ip_header, sizeof(sr_ip_hdr_t)) != ip_checksum) {
@@ -141,20 +141,22 @@ void StaticRouter::handlePacket(std::vector<uint8_t> packet, std::string iface)
         }
         // Handle IP packet
         Packet packet_to_send;
+        uint32_t ip_to_send;
         uint32_t dstIp = ntohl(ipHdr->ip_dst);
         if (ipHdr->ip_ttl == 0) {
             spdlog::info("IP packet has TTL 0");
             return;
         }
         if (isForMe(dstIp)) {
+            ip_to_send = ntohl(ipHdr->ip_src);
             spdlog::info("DstIP is for me");
             if (ipHdr->ip_p == ip_protocol_icmp) {
                 spdlog::info("IP protocol is ICMP");
                 sr_icmp_hdr_t* icmpHdr = reinterpret_cast<sr_icmp_hdr_t*>(packet.data() + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t));
                 uint16_t given_checksum = icmpHdr->icmp_sum;
                 icmpHdr->icmp_sum = 0;
-                uint16_t actual_checksum = cksum(icmpHdr, sizeof(sr_icmp_hdr_t));
-                if (actual_checksum != ntohs(given_checksum)) {
+                uint16_t actual_checksum = cksum(icmpHdr, packet.size() - sizeof(sr_ethernet_hdr_t) - sizeof(sr_ip_hdr_t));
+                if (actual_checksum != given_checksum) {
                     spdlog::info("ICMP checksum failure");
                     return;
                 }
@@ -177,28 +179,30 @@ void StaticRouter::handlePacket(std::vector<uint8_t> packet, std::string iface)
         } else {
             spdlog::info("DstIP is not for me");
             if(ipHdr->ip_ttl == 1) {
+                ip_to_send = ntohl(ipHdr->ip_src);
                 spdlog::info("IP TTL is 1, send ICMP Exceed");
                 packet_to_send = makeIcmpTtlExceed(packet, dstIp);
             } else {
+                ip_to_send = dstIp;
                 packet_to_send = makeIpForwardPacket(packet);
             }
         }
         std::string outgoing_iface = iface;
-        auto route = routingTable->getRoutingEntry(dstIp);
+        auto route = routingTable->getRoutingEntry(ip_to_send);
         if (!route) {
             spdlog::info("Did not find route from routing table");
-            packet_to_send = makeIcmpUnreachable(packet, icmp_code_net_unreachable, (routingTable->getRoutingInterface(iface)).ip);
+            packet_to_send = makeIcmpUnreachable(packet, icmp_code_net_unreachable, ntohl((routingTable->getRoutingInterface(iface)).ip));
         } else {
             iface = route->iface;
         }
-        sendIp(packet_to_send, outgoing_iface, dstIp, ethertype_ip);
+        sendIp(packet_to_send, outgoing_iface, ip_to_send, ethertype_ip);
     }
 }
 
 bool StaticRouter::isForMe(uint32_t ip) {
     auto interfaces = routingTable->getRoutingInterfaces();
     for (const auto& [iface, interface] : interfaces) {
-        if (interface.ip == ip) {
+        if (ntohl(interface.ip) == ip) {
             return true;
         }
     }
