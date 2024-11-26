@@ -31,7 +31,9 @@ private:
 
     bool isForMe(uint32_t ip);
     void sendIp(const Packet& packet, const std::string& iface, uint32_t ip, uint16_t ethType);
-    void sendEthernetFrame(const mac_addr& srcMac, const mac_addr& destMac, uint16_t ethType, const Packet& packet) ;
+    void sendEthernetFrame(const std::string& iface, const mac_addr& destMac, uint16_t ethType, const Packet& packet) ;
+    void sendArpRequest(uint32_t ip, const std::string& iface);
+    void sendArpReply(const mac_addr sender_mac, uint32_t sender_ip, const std::string& iface, const mac_addr& my_mac, uint32_t my_ip);
 };
 
 

@@ -215,6 +215,7 @@ sr_ip_hdr_t createIpHeader(uint16_t totalLen, uint8_t protocol, uint32_t srcIp, 
     ipHeader.ip_dst = htonl(destIp);
     ipHeader.ip_sum = 0;
     ipHeader.ip_sum = cksum(&ipHeader, sizeof(sr_ip_hdr_t));
+    ipHeader.ip_sum = htons(ipHeader.ip_sum);
     return ipHeader;
 }
 
@@ -222,16 +223,24 @@ sr_icmp_t3_hdr_t createIcmpType3Header(uint8_t type, uint8_t code, const std::ve
     sr_icmp_t3_hdr_t icmpHeader{};
     icmpHeader.icmp_type = type;
     icmpHeader.icmp_code = code;
-    icmpHeader.unused = 0;
-    icmpHeader.next_mtu = 0;
-
+    icmpHeader.unused = htons(0);
+    icmpHeader.next_mtu = htons(0);
     // Copy original IP header and 8 bytes of payload for ICMP error
-    const size_t copyLength = std::min((unsigned long)ICMP_DATA_SIZE, originalPacket.size() - ETHERNET_HEADER_SIZE);
+    const size_t copyLength = std::min(sizeof(sr_ip_hdr_t) + 64, originalPacket.size() - ETHERNET_HEADER_SIZE);
     memcpy(icmpHeader.data, originalPacket.data() + ETHERNET_HEADER_SIZE, copyLength);
 
     icmpHeader.icmp_sum = 0;
     icmpHeader.icmp_sum = cksum(&icmpHeader, sizeof(sr_icmp_t3_hdr_t));
+    icmpHeader.icmp_sum = htons(icmpHeader.icmp_sum);
     return icmpHeader;
+}
+
+Packet createIpPacket(const Packet& payload, uint8_t payload_protocol, uint32_t srcIp, uint32_t destIp, uint8_t ttl) {
+    auto ip_header = createIpHeader(sizeof(sr_ip_hdr_t) + payload.size(), payload_protocol, srcIp, destIp, ttl);
+    Packet ip_packet(sizeof(sr_ip_hdr_t) + payload.size());
+    memcpy(ip_packet.data(), &ip_header, sizeof(sr_ip_hdr_t));
+    memcpy(ip_packet.data() + sizeof(sr_ip_hdr_t), payload.data(), payload.size());
+    return ip_packet;
 }
 
 Packet createEthernetFrame(const sr_ethernet_hdr_t& ethHeader, const void* payload, size_t payloadSize) {

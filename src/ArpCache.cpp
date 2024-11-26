@@ -140,7 +140,7 @@ void ArpCache::sendIcmpHostUnreachable(Packet& packet, const std::string& iface)
     auto ifaceInfo = routingTable->getRoutingInterface(iface);
     auto* ipHeader = reinterpret_cast<sr_ip_hdr_t*>(packet.data() + ETHERNET_HEADER_SIZE);
 
-    auto icmpHeader = createIcmpType3Header(3, 1, packet);  // Type 3, Code 1: Host Unreachable
+    auto icmpHeader = createIcmpType3Header(1, packet);  // Type 3, Code 1: Host Unreachable
     auto ipHeaderResponse = createIpHeader(
         sizeof(sr_ip_hdr_t) + sizeof(sr_icmp_t3_hdr_t),
         ip_protocol_icmp,

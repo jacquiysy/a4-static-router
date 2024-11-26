@@ -33,4 +33,6 @@ sr_icmp_t3_hdr_t createIcmpType3Header(uint8_t type, uint8_t code, const std::ve
 
 Packet createEthernetFrame(const sr_ethernet_hdr_t& ethHeader, const void* payload, size_t payloadSize);
 
+Packet createIpPacket(const Packet& payload, uint8_t payload_protocol, uint32_t srcIp, uint32_t destIp, uint8_t ttl);
+
 #endif //UTILS_RAW_H
