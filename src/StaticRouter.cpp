@@ -46,7 +46,7 @@ Packet makeIcmpEchoReply(Packet& incoming_packet) {
 }
 
 Packet makeIcmpUnreachable(const Packet& incoming_packet, uint8_t code, uint32_t ip) {
-    spdlog::info("Make Icmp Unreachable, code: %d", code);
+    spdlog::info("Make Icmp Unreachable, code: {}", code);
 
     const sr_ip_hdr_t* ip_hdr = reinterpret_cast<const sr_ip_hdr_t*>(incoming_packet.data() + ETHERNET_HEADER_SIZE);
     auto icmp_header = createIcmpType3Header(icmp_type_unreachable, code, incoming_packet);
@@ -58,7 +58,7 @@ Packet makeIcmpUnreachable(const Packet& incoming_packet, uint8_t code, uint32_t
 }
 
 Packet makeIcmpTtlExceed(const Packet& incoming_packet, uint32_t ip){
-    spdlog::info("Make Icmp TTL Exceeded, %d", ip);
+    spdlog::info("Make Icmp TTL Exceeded, ip: {}", ip);
 
     const sr_ip_hdr_t* ip_hdr = reinterpret_cast<const sr_ip_hdr_t*>(incoming_packet.data() + ETHERNET_HEADER_SIZE);
     auto icmp_header = createIcmpType3Header(icmp_type_ttl_exceeded, icmp_code_ttl_exceeded, incoming_packet);
@@ -109,6 +109,7 @@ void StaticRouter::handlePacket(std::vector<uint8_t> packet, std::string iface)
     // verify checksum
     
     if (ethType == ethertype_arp) {
+        spdlog::info("Packet is ARP type");
         // Handle ARP packet
         sr_arp_hdr_t* arpHdr = reinterpret_cast<sr_arp_hdr_t*>(packet.data() + sizeof(sr_ethernet_hdr_t));
         mac_addr senderMac = make_mac_addr(arpHdr->ar_sha);
@@ -126,6 +127,7 @@ void StaticRouter::handlePacket(std::vector<uint8_t> packet, std::string iface)
             }
         }
     } else if (ethType == ethertype_ip) {
+        spdlog::info("Packet is IP type");
         // check ip checksum
         sr_ip_hdr_t ip_header;
         sr_ip_hdr_t* ipHdr = reinterpret_cast<sr_ip_hdr_t*>(packet.data() + sizeof(sr_ethernet_hdr_t));
@@ -145,7 +147,9 @@ void StaticRouter::handlePacket(std::vector<uint8_t> packet, std::string iface)
             return;
         }
         if (isForMe(dstIp)) {
+            spdlog::info("DstIP is for me");
             if (ipHdr->ip_p == ip_protocol_icmp) {
+                spdlog::info("IP protocol is ICMP");
                 sr_icmp_hdr_t* icmpHdr = reinterpret_cast<sr_icmp_hdr_t*>(packet.data() + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t));
                 uint16_t given_checksum = icmpHdr->icmp_sum;
                 icmpHdr->icmp_sum = 0;
@@ -162,6 +166,7 @@ void StaticRouter::handlePacket(std::vector<uint8_t> packet, std::string iface)
                     return;
                 }
             } else if(ipHdr->ip_p == ip_protocol_tcp || ipHdr->ip_p == ip_protocol_udp) {
+                spdlog::info("IP protocol is TCP/UDP");
                 // no such service
                 packet_to_send = makeIcmpUnreachable(packet, icmp_code_protocol_unreachable, dstIp);
             } else {
@@ -170,7 +175,9 @@ void StaticRouter::handlePacket(std::vector<uint8_t> packet, std::string iface)
                 return;
             }
         } else {
+            spdlog::info("DstIP is not for me");
             if(ipHdr->ip_ttl == 1) {
+                spdlog::info("IP TTL is 1, send ICMP Exceed");
                 packet_to_send = makeIcmpTtlExceed(packet, dstIp);
             } else {
                 packet_to_send = makeIpForwardPacket(packet);
@@ -179,6 +186,7 @@ void StaticRouter::handlePacket(std::vector<uint8_t> packet, std::string iface)
         std::string outgoing_iface = iface;
         auto route = routingTable->getRoutingEntry(dstIp);
         if (!route) {
+            spdlog::info("Did not find route from routing table");
             packet_to_send = makeIcmpUnreachable(packet, icmp_code_net_unreachable, (routingTable->getRoutingInterface(iface)).ip);
         } else {
             iface = route->iface;
@@ -199,6 +207,7 @@ bool StaticRouter::isForMe(uint32_t ip) {
 
 // same level 
 void StaticRouter::sendArpRequest(uint32_t ip, const std::string& iface) {
+    spdlog::info("Send ARP Request");
     const mac_addr broadcast_addr = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
     
     auto outgoing_interface = routingTable->getRoutingInterface(iface);
@@ -209,6 +218,7 @@ void StaticRouter::sendArpRequest(uint32_t ip, const std::string& iface) {
 }
 
 void StaticRouter::sendArpReply(const mac_addr sender_mac, uint32_t sender_ip, const std::string& iface, const mac_addr& my_mac, uint32_t my_ip) {
+    spdlog::info("Send ARP Reply");
     auto arp_header = createArpHeader(arp_op_reply, my_mac, my_ip, sender_mac, sender_ip);
     Packet arp_packet(sizeof(sr_arp_hdr_t));
     memcpy(arp_packet.data(), &arp_header, sizeof(sr_arp_hdr_t));
@@ -216,6 +226,7 @@ void StaticRouter::sendArpReply(const mac_addr sender_mac, uint32_t sender_ip, c
 }
 
 void StaticRouter::sendIp(const Packet& packet, const std::string& iface, uint32_t ip, uint16_t ethType) {
+    spdlog::info("Send IP");
     auto nextHopMac = arpCache->getEntry(ip);
     if (!nextHopMac) {
         arpCache->queuePacket(ip, packet, iface);
@@ -226,6 +237,7 @@ void StaticRouter::sendIp(const Packet& packet, const std::string& iface, uint32
 }
 
 void StaticRouter::sendEthernetFrame(const std::string& iface, const mac_addr& destMac, uint16_t ethType, const Packet& packet) {
+    spdlog::info("Create and Send Ethernet Frame");
     auto outgoing_interface = routingTable->getRoutingInterface(iface);
     mac_addr srcMac = outgoing_interface.mac;
     auto header = createEthernetHeader(srcMac, destMac, ethType);
