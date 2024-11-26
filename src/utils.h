@@ -35,4 +35,8 @@ Packet createEthernetFrame(const sr_ethernet_hdr_t& ethHeader, const void* paylo
 
 Packet createIpPacket(const Packet& payload, uint8_t payload_protocol, uint32_t srcIp, uint32_t destIp, uint8_t ttl);
 
+void decodeIPHeader(sr_ip_hdr_t* ipHeader);
+
+void encodeIPHeader(sr_ip_hdr_t* ipHeader);
+
 #endif //UTILS_RAW_H

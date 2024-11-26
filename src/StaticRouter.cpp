@@ -20,6 +20,71 @@ const uint8_t icmp_code_host_unreachable = 1;
 const uint8_t icmp_code_protocol_unreachable = 2; 
 const uint8_t icmp_code_port_unreachable = 3; 
 
+Packet makeIcmpEchoReply(Packet& incoming_packet) {
+    spdlog::info("Make Icmp Echo Reply");
+     // Extract headers from the incoming packet
+    sr_ip_hdr_t* ip_hdr = reinterpret_cast<sr_ip_hdr_t*>(incoming_packet.data() + ETHERNET_HEADER_SIZE);
+
+    const sr_icmp_hdr_t* icmp_hdr = reinterpret_cast<const sr_icmp_hdr_t*>(
+        incoming_packet.data() + ETHERNET_HEADER_SIZE + sizeof(sr_ip_hdr_t));
+
+    // Calculate the ICMP len & packet
+    size_t icmp_payload_len = ntohs(ip_hdr->ip_len) - sizeof(sr_ip_hdr_t);
+    Packet icmp_payload(icmp_payload_len);
+    memcpy(icmp_payload.data(), reinterpret_cast<const uint8_t*>(icmp_hdr), icmp_payload_len);
+
+    // Update the ICMP type to echo reply and recalculate checksum
+    auto* icmp_reply_hdr = reinterpret_cast<sr_icmp_hdr_t*>(icmp_payload.data());
+    icmp_reply_hdr->icmp_type = icmp_type_echo_reply;
+    icmp_reply_hdr->icmp_sum = 0; // Reset checksum
+    icmp_reply_hdr->icmp_sum = cksum(icmp_payload.data(), icmp_payload_len);
+    icmp_reply_hdr->icmp_sum = htons(icmp_reply_hdr->icmp_sum);
+
+    Packet ip_packet = createIpPacket(icmp_payload, ip_protocol_icmp, ntohl(ip_hdr->ip_dst), ntohl(ip_hdr->ip_src), INIT_TTL);
+
+    return ip_packet;
+}
+
+Packet makeIcmpUnreachable(const Packet& incoming_packet, uint8_t code, uint32_t ip) {
+    spdlog::info("Make Icmp Unreachable, code: %d", code);
+
+    const sr_ip_hdr_t* ip_hdr = reinterpret_cast<const sr_ip_hdr_t*>(incoming_packet.data() + ETHERNET_HEADER_SIZE);
+    auto icmp_header = createIcmpType3Header(icmp_type_unreachable, code, incoming_packet);
+    Packet icmp_packet(sizeof(sr_icmp_t3_hdr_t));
+    memcpy(icmp_packet.data(), &icmp_header, sizeof(sr_icmp_t3_hdr_t));
+
+    Packet ip_packet = createIpPacket(icmp_packet, ip_protocol_icmp, ip, ntohl(ip_hdr->ip_src), INIT_TTL);
+    return ip_packet;
+}
+
+Packet makeIcmpTtlExceed(const Packet& incoming_packet, uint32_t ip){
+    spdlog::info("Make Icmp TTL Exceeded, %d", ip);
+
+    const sr_ip_hdr_t* ip_hdr = reinterpret_cast<const sr_ip_hdr_t*>(incoming_packet.data() + ETHERNET_HEADER_SIZE);
+    auto icmp_header = createIcmpType3Header(icmp_type_ttl_exceeded, icmp_code_ttl_exceeded, incoming_packet);
+    Packet icmp_packet(sizeof(sr_icmp_t3_hdr_t));
+    memcpy(icmp_packet.data(), &icmp_header, sizeof(sr_icmp_t3_hdr_t));
+
+    Packet ip_packet = createIpPacket(icmp_packet, ip_protocol_icmp, ip, ntohl(ip_hdr->ip_src), INIT_TTL);
+    return ip_packet;
+}
+
+Packet makeIpForwardPacket(const Packet& incoming_packet) {
+    spdlog::info("Make IP Forward Packet");
+    const uint8_t* ip_packet_start = incoming_packet.data() + ETHERNET_HEADER_SIZE;
+    size_t ip_packet_length = incoming_packet.size() - ETHERNET_HEADER_SIZE;
+
+    // Create a new Packet to hold the extracted IP packet
+    Packet ip_packet(ip_packet_length);
+    memcpy(ip_packet.data(), ip_packet_start, ip_packet_length);
+    sr_ip_hdr_t* ip_hdr = reinterpret_cast<sr_ip_hdr_t*>(ip_packet.data());
+    decodeIPHeader(ip_hdr);
+    ip_hdr->ip_ttl--;
+    ip_hdr->ip_sum = 0;
+    ip_hdr->ip_sum = cksum(ip_hdr, sizeof(sr_ip_hdr_t));
+    encodeIPHeader(ip_hdr);
+    return ip_packet;
+}
 
 StaticRouter::StaticRouter(std::unique_ptr<IArpCache> arpCache, std::shared_ptr<IRoutingTable> routingTable,
                            std::shared_ptr<IPacketSender> packetSender)
@@ -65,15 +130,18 @@ void StaticRouter::handlePacket(std::vector<uint8_t> packet, std::string iface)
         sr_ip_hdr_t ip_header;
         sr_ip_hdr_t* ipHdr = reinterpret_cast<sr_ip_hdr_t*>(packet.data() + sizeof(sr_ethernet_hdr_t));
         memcpy(&ip_header, ipHdr, sizeof(sr_ip_hdr_t));
+        decodeIPHeader(&ip_header);
         uint16_t ip_checksum = ip_header.ip_sum;
         ip_header.ip_sum = 0;
         if (cksum(&ip_header, sizeof(sr_ip_hdr_t)) != ip_checksum) {
+            spdlog::info("IP checksum failure");
             return;
         }
         // Handle IP packet
         Packet packet_to_send;
         uint32_t dstIp = ntohl(ipHdr->ip_dst);
         if (ipHdr->ip_ttl == 0) {
+            spdlog::info("IP packet has TTL 0");
             return;
         }
         if (isForMe(dstIp)) {
@@ -82,13 +150,15 @@ void StaticRouter::handlePacket(std::vector<uint8_t> packet, std::string iface)
                 uint16_t given_checksum = icmpHdr->icmp_sum;
                 icmpHdr->icmp_sum = 0;
                 uint16_t actual_checksum = cksum(icmpHdr, sizeof(sr_icmp_hdr_t));
-                if (actual_checksum != given_checksum) {
+                if (actual_checksum != ntohs(given_checksum)) {
+                    spdlog::info("ICMP checksum failure");
                     return;
                 }
                 icmpHdr->icmp_sum = given_checksum;
                 if (icmpHdr->icmp_type == icmp_type_echo_request) {
                     packet_to_send = makeIcmpEchoReply(packet);
                 } else {
+                    spdlog::info("ICMP type is not echo");
                     return;
                 }
             } else if(ipHdr->ip_p == ip_protocol_tcp || ipHdr->ip_p == ip_protocol_udp) {
@@ -96,6 +166,7 @@ void StaticRouter::handlePacket(std::vector<uint8_t> packet, std::string iface)
                 packet_to_send = makeIcmpUnreachable(packet, icmp_code_protocol_unreachable, dstIp);
             } else {
                 // ignore
+                spdlog::info("IP protocol is not ICMP/TCP/UDP");
                 return;
             }
         } else {
@@ -126,77 +197,21 @@ bool StaticRouter::isForMe(uint32_t ip) {
     return false;
 }
 
-Packet makeIcmpEchoReply(Packet& incoming_packet) {
-     // Extract headers from the incoming packet
-    const sr_ip_hdr_t* ip_hdr = reinterpret_cast<const sr_ip_hdr_t*>(incoming_packet.data() + ETHERNET_HEADER_SIZE);
-    const sr_icmp_hdr_t* icmp_hdr = reinterpret_cast<const sr_icmp_hdr_t*>(
-        incoming_packet.data() + ETHERNET_HEADER_SIZE + sizeof(sr_ip_hdr_t));
-
-    // Calculate the ICMP len & packet
-    size_t icmp_payload_len = ntohs(ip_hdr->ip_len) - sizeof(sr_ip_hdr_t);
-    Packet icmp_payload(icmp_payload_len);
-    memcpy(icmp_payload.data(), reinterpret_cast<const uint8_t*>(icmp_hdr), icmp_payload_len);
-
-    // Update the ICMP type to echo reply and recalculate checksum
-    auto* icmp_reply_hdr = reinterpret_cast<sr_icmp_hdr_t*>(icmp_payload.data());
-    icmp_reply_hdr->icmp_type = icmp_type_echo_reply;
-    icmp_reply_hdr->icmp_sum = 0; // Reset checksum
-    icmp_reply_hdr->icmp_sum = cksum(icmp_payload.data(), icmp_payload_len);
-
-    Packet ip_packet = createIpPacket(icmp_payload, ip_protocol_icmp, ip_hdr->ip_dst, ip_hdr->ip_src, INIT_TTL);
-
-    return ip_packet;
-}
-
-Packet makeIcmpUnreachable(const Packet& incoming_packet, uint8_t code, uint32_t ip) {
-    const sr_ip_hdr_t* ip_hdr = reinterpret_cast<const sr_ip_hdr_t*>(incoming_packet.data() + ETHERNET_HEADER_SIZE);
-    auto icmp_header = createIcmpType3Header(icmp_type_unreachable, code, incoming_packet);
-    Packet icmp_packet(ICMP_T3_PACKET_SIZE);
-    memcpy(icmp_packet.data(), &icmp_header, ICMP_T3_PACKET_SIZE);
-
-    Packet ip_packet = createIpPacket(icmp_packet, ip_protocol_icmp, ip, ip_hdr->ip_src, INIT_TTL);
-    return ip_packet;
-}
-
-Packet makeIcmpTtlExceed(const Packet& incoming_packet, uint32_t ip){
-    const sr_ip_hdr_t* ip_hdr = reinterpret_cast<const sr_ip_hdr_t*>(incoming_packet.data() + ETHERNET_HEADER_SIZE);
-    auto icmp_header = createIcmpType3Header(icmp_type_ttl_exceeded, icmp_code_ttl_exceeded, incoming_packet);
-    Packet icmp_packet(ICMP_T3_PACKET_SIZE);
-    memcpy(icmp_packet.data(), &icmp_header, ICMP_T3_PACKET_SIZE);
-
-    Packet ip_packet = createIpPacket(icmp_packet, ip_protocol_icmp, ip, ip_hdr->ip_src, INIT_TTL);
-    return ip_packet;
-}
-
-Packet makeIpForwardPacket(const Packet& incoming_packet) {
-    const uint8_t* ip_packet_start = incoming_packet.data() + ETHERNET_HEADER_SIZE;
-    size_t ip_packet_length = incoming_packet.size() - ETHERNET_HEADER_SIZE;
-
-    // Create a new Packet to hold the extracted IP packet
-    Packet ip_packet(ip_packet_length);
-    memcpy(ip_packet.data(), ip_packet_start, ip_packet_length);
-    sr_ip_hdr_t* ip_hdr = reinterpret_cast<sr_ip_hdr_t*>(ip_packet.data());
-    ip_hdr->ip_ttl--;
-    ip_hdr->ip_sum = 0;
-    ip_hdr->ip_sum = cksum(ip_hdr, sizeof(sr_ip_hdr_t));
-    return ip_packet;
-}
-
 // same level 
 void StaticRouter::sendArpRequest(uint32_t ip, const std::string& iface) {
     const mac_addr broadcast_addr = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
     
     auto outgoing_interface = routingTable->getRoutingInterface(iface);
     auto arp = createArpHeader(arp_op_request, outgoing_interface.mac, outgoing_interface.ip, broadcast_addr, ip);
-    Packet arp_packet(ARP_PACKET_SIZE);
-    memcpy(arp_packet.data(), &arp, ARP_PACKET_SIZE);
+    Packet arp_packet(sizeof(sr_arp_hdr_t));
+    memcpy(arp_packet.data(), &arp, sizeof(sr_arp_hdr_t));
     sendEthernetFrame(iface, broadcast_addr, ethertype_arp, arp_packet);
 }
 
 void StaticRouter::sendArpReply(const mac_addr sender_mac, uint32_t sender_ip, const std::string& iface, const mac_addr& my_mac, uint32_t my_ip) {
     auto arp_header = createArpHeader(arp_op_reply, my_mac, my_ip, sender_mac, sender_ip);
-    Packet arp_packet(ARP_PACKET_SIZE);
-    memcpy(arp_packet.data(), &arp_header, ARP_PACKET_SIZE);
+    Packet arp_packet(sizeof(sr_arp_hdr_t));
+    memcpy(arp_packet.data(), &arp_header, sizeof(sr_arp_hdr_t));
     sendEthernetFrame(iface, sender_mac, ethertype_arp, arp_packet);
 }
 

@@ -183,6 +183,8 @@ sr_ethernet_hdr_t createEthernetHeader(const mac_addr& srcMac, const mac_addr& d
     memcpy(ethHeader.ether_shost, srcMac.data(), ETHER_ADDR_LEN);
     memcpy(ethHeader.ether_dhost, destMac.data(), ETHER_ADDR_LEN);
     ethHeader.ether_type = htons(ethType);
+    spdlog::info("Create Ethernet Header");
+    print_hdr_eth(reinterpret_cast<uint8_t*>(&ethHeader));
     return ethHeader;
 }
 
@@ -198,6 +200,9 @@ sr_arp_hdr_t createArpHeader(uint16_t op, const mac_addr& senderMac, uint32_t se
     arpHeader.ar_sip = htonl(senderIp);
     memcpy(arpHeader.ar_tha, targetMac.data(), ETHER_ADDR_LEN);
     arpHeader.ar_tip = htonl(targetIp);
+    
+    spdlog::info("Create ARP Header");
+    print_hdr_arp(reinterpret_cast<uint8_t*>(&arpHeader));
     return arpHeader;
 }
 
@@ -206,16 +211,19 @@ sr_ip_hdr_t createIpHeader(uint16_t totalLen, uint8_t protocol, uint32_t srcIp, 
     ipHeader.ip_v = 4;
     ipHeader.ip_hl = sizeof(sr_ip_hdr_t) / 4;
     ipHeader.ip_tos = 0;
-    ipHeader.ip_len = htons(totalLen);
-    ipHeader.ip_id = htons(0);
-    ipHeader.ip_off = htons(IP_DF);
+    ipHeader.ip_len = totalLen;
+    ipHeader.ip_id = 0;
+    ipHeader.ip_off = IP_DF;
     ipHeader.ip_ttl = ttl;
     ipHeader.ip_p = protocol;
-    ipHeader.ip_src = htonl(srcIp);
-    ipHeader.ip_dst = htonl(destIp);
+    ipHeader.ip_src = srcIp;
+    ipHeader.ip_dst = destIp;
     ipHeader.ip_sum = 0;
     ipHeader.ip_sum = cksum(&ipHeader, sizeof(sr_ip_hdr_t));
-    ipHeader.ip_sum = htons(ipHeader.ip_sum);
+    encodeIPHeader(&ipHeader);
+
+    spdlog::info("Create Ip Header");
+    print_hdr_ip(reinterpret_cast<uint8_t*>(&ipHeader));
     return ipHeader;
 }
 
@@ -223,8 +231,8 @@ sr_icmp_t3_hdr_t createIcmpType3Header(uint8_t type, uint8_t code, const std::ve
     sr_icmp_t3_hdr_t icmpHeader{};
     icmpHeader.icmp_type = type;
     icmpHeader.icmp_code = code;
-    icmpHeader.unused = htons(0);
-    icmpHeader.next_mtu = htons(0);
+    icmpHeader.unused = 0;
+    icmpHeader.next_mtu = 0;
     // Copy original IP header and 8 bytes of payload for ICMP error
     const size_t copyLength = std::min(sizeof(sr_ip_hdr_t) + 64, originalPacket.size() - ETHERNET_HEADER_SIZE);
     memcpy(icmpHeader.data, originalPacket.data() + ETHERNET_HEADER_SIZE, copyLength);
@@ -232,6 +240,9 @@ sr_icmp_t3_hdr_t createIcmpType3Header(uint8_t type, uint8_t code, const std::ve
     icmpHeader.icmp_sum = 0;
     icmpHeader.icmp_sum = cksum(&icmpHeader, sizeof(sr_icmp_t3_hdr_t));
     icmpHeader.icmp_sum = htons(icmpHeader.icmp_sum);
+
+    spdlog::info("Create Icmp Type 3 Header");
+    print_hdr_icmp(reinterpret_cast<uint8_t*>(&icmpHeader));
     return icmpHeader;
 }
 
@@ -248,4 +259,22 @@ Packet createEthernetFrame(const sr_ethernet_hdr_t& ethHeader, const void* paylo
     memcpy(frame.data(), &ethHeader, ETHERNET_HEADER_SIZE);
     memcpy(frame.data() + ETHERNET_HEADER_SIZE, payload, payloadSize);
     return frame;
+}
+
+void decodeIPHeader(sr_ip_hdr_t* ipHeader) {
+  ipHeader->ip_len = ntohs(ipHeader->ip_len);
+  ipHeader->ip_id = ntohs(ipHeader->ip_id);
+  ipHeader->ip_off = ntohs(ipHeader->ip_off);
+  ipHeader->ip_src = ntohl(ipHeader->ip_src);
+  ipHeader->ip_dst = ntohl(ipHeader->ip_dst);
+  ipHeader->ip_sum = ntohs(ipHeader->ip_sum);
+}
+
+void encodeIPHeader(sr_ip_hdr_t* ipHeader) {
+  ipHeader->ip_len = htons(ipHeader->ip_len);
+  ipHeader->ip_id = htons(ipHeader->ip_id);
+  ipHeader->ip_off = htons(ipHeader->ip_off);
+  ipHeader->ip_src = htonl(ipHeader->ip_src);
+  ipHeader->ip_dst = htonl(ipHeader->ip_dst);
+  ipHeader->ip_sum = htons(ipHeader->ip_sum);
 }
