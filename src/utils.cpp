@@ -200,7 +200,7 @@ sr_arp_hdr_t createArpHeader(uint16_t op, const mac_addr& senderMac, uint32_t se
     arpHeader.ar_sip = htonl(senderIp);
     memcpy(arpHeader.ar_tha, targetMac.data(), ETHER_ADDR_LEN);
     arpHeader.ar_tip = htonl(targetIp);
-    
+
     spdlog::info("Create ARP Header");
     print_hdr_arp(reinterpret_cast<uint8_t*>(&arpHeader));
     return arpHeader;
@@ -218,9 +218,9 @@ sr_ip_hdr_t createIpHeader(uint16_t totalLen, uint8_t protocol, uint32_t srcIp, 
     ipHeader.ip_p = protocol;
     ipHeader.ip_src = srcIp;
     ipHeader.ip_dst = destIp;
+    encodeIPHeader(&ipHeader);
     ipHeader.ip_sum = 0;
     ipHeader.ip_sum = cksum(&ipHeader, sizeof(sr_ip_hdr_t));
-    encodeIPHeader(&ipHeader);
 
     spdlog::info("Create Ip Header");
     print_hdr_ip(reinterpret_cast<uint8_t*>(&ipHeader));
@@ -276,5 +276,5 @@ void encodeIPHeader(sr_ip_hdr_t* ipHeader) {
   ipHeader->ip_off = htons(ipHeader->ip_off);
   ipHeader->ip_src = htonl(ipHeader->ip_src);
   ipHeader->ip_dst = htonl(ipHeader->ip_dst);
-  ipHeader->ip_sum = htons(ipHeader->ip_sum);
+  // ipHeader->ip_sum = htons(ipHeader->ip_sum);
 }

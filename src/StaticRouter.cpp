@@ -38,7 +38,6 @@ Packet makeIcmpEchoReply(Packet& incoming_packet) {
     icmp_reply_hdr->icmp_type = icmp_type_echo_reply;
     icmp_reply_hdr->icmp_sum = 0; // Reset checksum
     icmp_reply_hdr->icmp_sum = cksum(icmp_payload.data(), icmp_payload_len);
-    icmp_reply_hdr->icmp_sum = htons(icmp_reply_hdr->icmp_sum);
 
     Packet ip_packet = createIpPacket(icmp_payload, ip_protocol_icmp, ntohl(ip_hdr->ip_dst), ntohl(ip_hdr->ip_src), INIT_TTL);
 
