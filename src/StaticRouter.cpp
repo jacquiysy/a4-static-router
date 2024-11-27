@@ -26,7 +26,7 @@ void StaticRouter::handlePacket(std::vector<uint8_t> packet, std::string iface)
 
     // TODO: Your code below
     uint16_t ethType = ethertype(packet.data());
-    
+
     spdlog::info("-----------------------Handle Packet----------------------");
     
     if (ethType == ethertype_arp) {
@@ -107,7 +107,7 @@ void StaticRouter::handlePacket(std::vector<uint8_t> packet, std::string iface)
                 mac_to_send = make_mac_addr(reinterpret_cast<sr_ethernet_hdr_t*>(packet.data())->ether_shost);
                 spdlog::info("IP TTL is 1, send ICMP Exceed");
                 RoutingInterface routing_iface = routingTable->getRoutingInterface(iface);
-                packet_to_send = makeIcmpTtlExceed(packet, routing_iface.ip);
+                packet_to_send = makeIcmpTtlExceed(packet, ntohl(routing_iface.ip));
             } else {
                 ip_to_send = dstIp;
                 packet_to_send = makeIpForwardPacket(packet);

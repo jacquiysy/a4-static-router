@@ -35,7 +35,7 @@ void ArpCache::tick() {
         ArpRequest& request = it->second;
 
         if(std::chrono::steady_clock::now() - request.lastSent >= std::chrono::seconds(1)) {
-            if(request.timesSent >= 7) {
+            if(request.timesSent >= 6) {
                 spdlog::warn("ARP request for IP {} failed after 7 retries. Sending ICMP Host Unreachable.", it->first);
 
                 for(auto& awaitingPacket : request.awaitingPackets) {
@@ -103,6 +103,7 @@ void ArpCache::queuePacket(uint32_t ip, const Packet& packet, const std::string&
     // TODO: Your code below
     if(requests.find(ip) == requests.end()) {
         requests[ip] = ArpRequest { ip, std::chrono::steady_clock::now(), 0, {} };
+        sendArpRequest(ip);
     }
 
     requests[ip].awaitingPackets.push_back({ packet, iface });
@@ -141,7 +142,7 @@ void ArpCache::sendIcmpHostUnreachable(Packet& packet, const std::string& iface)
     auto ifaceInfo = routingTable->getRoutingInterface(iface);
     uint32_t src_ip = ntohl(ifaceInfo.ip);
     Packet icmp_packet = makeIcmpUnreachable(packet, icmp_code_host_unreachable, src_ip);
-    mac_addr dest_mac = make_mac_addr(reinterpret_cast<uint8_t*>(packet.data()));
+    mac_addr dest_mac = make_mac_addr(reinterpret_cast<sr_ethernet_hdr_t*>(packet.data())->ether_shost);
     sendEthernetFrame(iface, dest_mac, ethertype_ip, icmp_packet);
 }
 
