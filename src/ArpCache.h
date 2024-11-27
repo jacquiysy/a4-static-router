@@ -35,6 +35,8 @@ public:
 
     void sendIcmpHostUnreachable(Packet& packet, const std::string& iface);
 
+    void sendEthernetFrame(const std::string& iface, const mac_addr& destMac, uint16_t ethType, const Packet& packet);
+
 private:
     void loop();
 

@@ -6,85 +6,6 @@
 #include "protocol.h"
 #include "utils.h"
 
-// ICMP message types
-const uint8_t icmp_type_echo_reply = 0; 
-const uint8_t icmp_type_unreachable = 3; 
-const uint8_t icmp_type_echo_request = 8; 
-const uint8_t icmp_type_ttl_exceeded = 11; 
-
-// ICMP message codes
-const uint8_t icmp_code_ttl_exceeded = 0; 
-const uint8_t icmp_code_echo_reply = 0; 
-const uint8_t icmp_code_net_unreachable = 0; 
-const uint8_t icmp_code_host_unreachable = 1; 
-const uint8_t icmp_code_protocol_unreachable = 2; 
-const uint8_t icmp_code_port_unreachable = 3; 
-
-Packet makeIcmpEchoReply(Packet& incoming_packet) {
-    spdlog::info("Make Icmp Echo Reply");
-     // Extract headers from the incoming packet
-    sr_ip_hdr_t* ip_hdr = reinterpret_cast<sr_ip_hdr_t*>(incoming_packet.data() + ETHERNET_HEADER_SIZE);
-
-    const sr_icmp_hdr_t* icmp_hdr = reinterpret_cast<const sr_icmp_hdr_t*>(
-        incoming_packet.data() + ETHERNET_HEADER_SIZE + sizeof(sr_ip_hdr_t));
-
-    // Calculate the ICMP len & packet
-    size_t icmp_payload_len = ntohs(ip_hdr->ip_len) - sizeof(sr_ip_hdr_t);
-    Packet icmp_payload(icmp_payload_len);
-    memcpy(icmp_payload.data(), reinterpret_cast<const uint8_t*>(icmp_hdr), icmp_payload_len);
-
-    // Update the ICMP type to echo reply and recalculate checksum
-    auto* icmp_reply_hdr = reinterpret_cast<sr_icmp_hdr_t*>(icmp_payload.data());
-    icmp_reply_hdr->icmp_type = icmp_type_echo_reply;
-    icmp_reply_hdr->icmp_sum = 0; // Reset checksum
-    icmp_reply_hdr->icmp_sum = cksum(icmp_payload.data(), icmp_payload_len);
-
-    Packet ip_packet = createIpPacket(icmp_payload, ip_protocol_icmp, ntohl(ip_hdr->ip_dst), ntohl(ip_hdr->ip_src), INIT_TTL);
-
-    return ip_packet;
-}
-
-Packet makeIcmpUnreachable(const Packet& incoming_packet, uint8_t code, uint32_t ip) {
-    spdlog::info("Make Icmp Unreachable, code: {}", code);
-
-    const sr_ip_hdr_t* ip_hdr = reinterpret_cast<const sr_ip_hdr_t*>(incoming_packet.data() + ETHERNET_HEADER_SIZE);
-    auto icmp_header = createIcmpType3Header(icmp_type_unreachable, code, incoming_packet);
-    Packet icmp_packet(sizeof(sr_icmp_t3_hdr_t));
-    memcpy(icmp_packet.data(), &icmp_header, sizeof(sr_icmp_t3_hdr_t));
-
-    Packet ip_packet = createIpPacket(icmp_packet, ip_protocol_icmp, ip, ntohl(ip_hdr->ip_src), INIT_TTL);
-    return ip_packet;
-}
-
-Packet makeIcmpTtlExceed(const Packet& incoming_packet, uint32_t src_ip){
-    spdlog::info("Make Icmp TTL Exceeded, ip: {}", src_ip);
-
-    const sr_ip_hdr_t* ip_hdr = reinterpret_cast<const sr_ip_hdr_t*>(incoming_packet.data() + ETHERNET_HEADER_SIZE);
-    auto icmp_header = createIcmpType3Header(icmp_type_ttl_exceeded, icmp_code_ttl_exceeded, incoming_packet);
-    Packet icmp_packet(sizeof(sr_icmp_t3_hdr_t));
-    memcpy(icmp_packet.data(), &icmp_header, sizeof(sr_icmp_t3_hdr_t));
-
-    Packet ip_packet = createIpPacket(icmp_packet, ip_protocol_icmp, src_ip, ntohl(ip_hdr->ip_src), INIT_TTL);
-    return ip_packet;
-}
-
-Packet makeIpForwardPacket(const Packet& incoming_packet) {
-    spdlog::info("Make IP Forward Packet");
-    const uint8_t* ip_packet_start = incoming_packet.data() + ETHERNET_HEADER_SIZE;
-    size_t ip_packet_length = incoming_packet.size() - ETHERNET_HEADER_SIZE;
-
-    // Create a new Packet to hold the extracted IP packet
-    Packet ip_packet(ip_packet_length);
-    memcpy(ip_packet.data(), ip_packet_start, ip_packet_length);
-    sr_ip_hdr_t* ip_hdr = reinterpret_cast<sr_ip_hdr_t*>(ip_packet.data());
-    decodeIPHeader(ip_hdr);
-    ip_hdr->ip_ttl--;
-    ip_hdr->ip_sum = 0;
-    ip_hdr->ip_sum = cksum(ip_hdr, sizeof(sr_ip_hdr_t));
-    encodeIPHeader(ip_hdr);
-    return ip_packet;
-}
-
 StaticRouter::StaticRouter(std::unique_ptr<IArpCache> arpCache, std::shared_ptr<IRoutingTable> routingTable,
                            std::shared_ptr<IPacketSender> packetSender)
     : routingTable(routingTable)
@@ -196,7 +117,7 @@ void StaticRouter::handlePacket(std::vector<uint8_t> packet, std::string iface)
             spdlog::info("Did not find route from routing table");
             packet_to_send = makeIcmpUnreachable(packet, icmp_code_net_unreachable, ntohl((routingTable->getRoutingInterface(iface)).ip));
         } else {
-            iface = route->iface;
+            outgoing_iface = route->iface;
         }
         sendIp(packet_to_send, outgoing_iface, ip_to_send, ethertype_ip, mac_to_send);
     }
@@ -218,7 +139,7 @@ void StaticRouter::sendArpRequest(uint32_t ip, const std::string& iface) {
     const mac_addr broadcast_addr = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
     
     auto outgoing_interface = routingTable->getRoutingInterface(iface);
-    auto arp = createArpHeader(arp_op_request, outgoing_interface.mac, outgoing_interface.ip, broadcast_addr, ip);
+    auto arp = createArpHeader(arp_op_request, outgoing_interface.mac, ntohl(outgoing_interface.ip), broadcast_addr, ip);
     Packet arp_packet(sizeof(sr_arp_hdr_t));
     memcpy(arp_packet.data(), &arp, sizeof(sr_arp_hdr_t));
     sendEthernetFrame(iface, broadcast_addr, ethertype_arp, arp_packet);

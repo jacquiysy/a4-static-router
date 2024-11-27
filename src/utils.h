@@ -6,6 +6,21 @@
 
 #include "RouterTypes.h"
 
+// ICMP message types
+inline const uint8_t icmp_type_echo_reply = 0; 
+inline const uint8_t icmp_type_unreachable = 3; 
+inline const uint8_t icmp_type_echo_request = 8; 
+inline const uint8_t icmp_type_ttl_exceeded = 11; 
+
+// ICMP message codes
+inline const uint8_t icmp_code_ttl_exceeded = 0; 
+inline const uint8_t icmp_code_echo_reply = 0; 
+inline const uint8_t icmp_code_net_unreachable = 0; 
+inline const uint8_t icmp_code_host_unreachable = 1; 
+inline const uint8_t icmp_code_protocol_unreachable = 2; 
+inline const uint8_t icmp_code_port_unreachable = 3; 
+
+
 uint16_t ethertype(uint8_t* buf);
 uint16_t cksum(const void *_data, int len);
 mac_addr make_mac_addr(void* addr);
@@ -38,5 +53,10 @@ Packet createIpPacket(const Packet& payload, uint8_t payload_protocol, uint32_t 
 void decodeIPHeader(sr_ip_hdr_t* ipHeader);
 
 void encodeIPHeader(sr_ip_hdr_t* ipHeader);
+
+Packet makeIcmpEchoReply(Packet& incoming_packet);
+Packet makeIcmpUnreachable(const Packet& incoming_packet, uint8_t code, uint32_t ip);
+Packet makeIcmpTtlExceed(const Packet& incoming_packet, uint32_t src_ip);
+Packet makeIpForwardPacket(const Packet& incoming_packet);
 
 #endif //UTILS_RAW_H
