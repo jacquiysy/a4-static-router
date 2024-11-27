@@ -184,7 +184,7 @@ sr_ethernet_hdr_t createEthernetHeader(const mac_addr& srcMac, const mac_addr& d
     memcpy(ethHeader.ether_dhost, destMac.data(), ETHER_ADDR_LEN);
     ethHeader.ether_type = htons(ethType);
     spdlog::info("Create Ethernet Header");
-    print_hdr_eth(reinterpret_cast<uint8_t*>(&ethHeader));
+    // print_hdr_eth(reinterpret_cast<uint8_t*>(&ethHeader));
     return ethHeader;
 }
 
