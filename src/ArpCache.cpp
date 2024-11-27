@@ -71,9 +71,12 @@ void ArpCache::addEntry(uint32_t ip, const mac_addr& mac) {
     auto it = requests.find(ip);
     if(it != requests.end()) {
         ArpRequest& request = it->second;
-
+        // forward packet
         for(auto& awaitingPacket : request.awaitingPackets) {
-            sendEthernetFrame(awaitingPacket.iface, mac, ethertype_ip, awaitingPacket.packet);
+            Packet packet_to_send = awaitingPacket.packet;
+            uint32_t ip_to_send = reinterpret_cast<sr_ip_hdr_t*>(packet_to_send.data())->ip_dst;
+            auto route = routingTable->getRoutingEntry(ip_to_send);
+            sendEthernetFrame(route->iface, mac, ethertype_ip, awaitingPacket.packet);
         }
 
         requests.erase(it);

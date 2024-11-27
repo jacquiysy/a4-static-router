@@ -30,7 +30,7 @@ private:
     std::unique_ptr<IArpCache> arpCache;
 
     bool isForMe(uint32_t ip);
-    void sendIp(const Packet& packet, const std::string& iface, uint32_t ip, uint16_t ethType, std::optional<mac_addr> nextMac);
+    void sendIp(const Packet& packet, const std::string& out_iface, const std::string& in_iface, uint32_t ip, uint16_t ethType, std::optional<mac_addr> nextMac);
     void sendEthernetFrame(const std::string& iface, const mac_addr& destMac, uint16_t ethType, const Packet& packet) ;
     void sendArpRequest(uint32_t ip, const std::string& iface);
     void sendArpReply(const mac_addr sender_mac, uint32_t sender_ip, const std::string& iface, const mac_addr& my_mac, uint32_t my_ip);

@@ -115,11 +115,12 @@ void StaticRouter::handlePacket(std::vector<uint8_t> packet, std::string iface)
         auto route = routingTable->getRoutingEntry(ip_to_send);
         if (!route) {
             spdlog::info("Did not find route from routing table");
+            mac_to_send = make_mac_addr(reinterpret_cast<sr_ethernet_hdr_t*>(packet.data())->ether_shost);
             packet_to_send = makeIcmpUnreachable(packet, icmp_code_net_unreachable, ntohl((routingTable->getRoutingInterface(iface)).ip));
         } else {
             outgoing_iface = route->iface;
         }
-        sendIp(packet_to_send, outgoing_iface, ip_to_send, ethertype_ip, mac_to_send);
+        sendIp(packet_to_send, outgoing_iface, iface, ip_to_send, ethertype_ip, mac_to_send);
     }
 }
 
@@ -153,18 +154,18 @@ void StaticRouter::sendArpReply(const mac_addr sender_mac, uint32_t sender_ip, c
     sendEthernetFrame(iface, sender_mac, ethertype_arp, arp_packet);
 }
 
-void StaticRouter::sendIp(const Packet& packet, const std::string& iface, uint32_t ip, uint16_t ethType, std::optional<mac_addr> nextMac) {
+void StaticRouter::sendIp(const Packet& packet, const std::string& out_iface, const std::string& in_iface, uint32_t ip, uint16_t ethType, std::optional<mac_addr> nextMac) {
     spdlog::info("Send IP");
     if (nextMac) {
-        sendEthernetFrame(iface, *nextMac, ethType, packet);
+        sendEthernetFrame(out_iface, *nextMac, ethType, packet);
         return;
     }
     auto nextHopMac = arpCache->getEntry(ip);
     if (!nextHopMac) {
-        arpCache->queuePacket(ip, packet, iface);
-        sendArpRequest(ip, iface);
+        arpCache->queuePacket(ip, packet, in_iface);
+        sendArpRequest(ip, out_iface);
     } else {
-        sendEthernetFrame(iface, *nextHopMac, ethType, packet);
+        sendEthernetFrame(out_iface, *nextHopMac, ethType, packet);
     }
 }
 
