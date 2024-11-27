@@ -66,7 +66,6 @@ void ArpCache::addEntry(uint32_t ip, const mac_addr& mac) {
 
     // TODO: Your code below
     ArpEntry entry = { ip, mac, std::chrono::steady_clock::now() };
-    entries[ip] = entry;
 
     auto it = requests.find(ip);
     if(it != requests.end()) {
@@ -74,12 +73,13 @@ void ArpCache::addEntry(uint32_t ip, const mac_addr& mac) {
         // forward packet
         for(auto& awaitingPacket : request.awaitingPackets) {
             Packet packet_to_send = awaitingPacket.packet;
-            uint32_t ip_to_send = ntohl(reinterpret_cast<sr_ip_hdr_t*>(packet_to_send.data())->ip_dst);
+            uint32_t ip_to_send = reinterpret_cast<sr_ip_hdr_t*>(packet_to_send.data())->ip_dst; // network order
             auto route = routingTable->getRoutingEntry(ip_to_send);
             sendEthernetFrame(route->iface, mac, ethertype_ip, awaitingPacket.packet);
         }
 
         requests.erase(it);
+        entries[ip] = entry;
     }
 }
 
@@ -110,7 +110,7 @@ void ArpCache::sendArpRequest(uint32_t ip) {
     spdlog::info("Sending ARP request for IP:");
     print_addr_ip_int(ip);
 
-    auto route = routingTable->getRoutingEntry(ip);
+    auto route = routingTable->getRoutingEntry(htonl(ip));
     if(!route) {
         spdlog::error("No route found for ARP request for IP");
         return;
@@ -120,14 +120,14 @@ void ArpCache::sendArpRequest(uint32_t ip) {
 
     auto ethHeader = createEthernetHeader(
         ifaceInfo.mac,
-        mac_addr { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF },
+        eth_broadcast_addr,
         ethertype_arp);
 
     auto arpHeader = createArpHeader(
         arp_op_request,
         ifaceInfo.mac,
         ntohl(ifaceInfo.ip),
-        mac_addr {},
+        arp_unknown_addr,
         ip);
 
     auto request = createEthernetFrame(ethHeader, &arpHeader, sizeof(arpHeader));

@@ -93,7 +93,7 @@ void StaticRouter::handlePacket(std::vector<uint8_t> packet, std::string iface)
             } else if(ipHdr->ip_p == ip_protocol_tcp || ipHdr->ip_p == ip_protocol_udp) {
                 spdlog::info("IP protocol is TCP/UDP");
                 // no such service
-                packet_to_send = makeIcmpUnreachable(packet, icmp_code_protocol_unreachable, dstIp);
+                packet_to_send = makeIcmpUnreachable(packet, icmp_code_port_unreachable, dstIp);
             } else {
                 // ignore
                 spdlog::info("IP protocol is not ICMP/TCP/UDP");
@@ -112,7 +112,7 @@ void StaticRouter::handlePacket(std::vector<uint8_t> packet, std::string iface)
             }
         }
         std::string outgoing_iface = iface;
-        auto route = routingTable->getRoutingEntry(ip_to_send);
+        auto route = routingTable->getRoutingEntry(htonl(ip_to_send));
         if (!route) {
             spdlog::info("Did not find route from routing table");
             mac_to_send = make_mac_addr(reinterpret_cast<sr_ethernet_hdr_t*>(packet.data())->ether_shost);
@@ -137,13 +137,13 @@ bool StaticRouter::isForMe(uint32_t ip) {
 // same level 
 void StaticRouter::sendArpRequest(uint32_t ip, const std::string& iface) {
     spdlog::info("Send ARP Request");
-    const mac_addr broadcast_addr = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+    // const mac_addr broadcast_addr = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
     
     auto outgoing_interface = routingTable->getRoutingInterface(iface);
-    auto arp = createArpHeader(arp_op_request, outgoing_interface.mac, ntohl(outgoing_interface.ip), broadcast_addr, ip);
+    auto arp = createArpHeader(arp_op_request, outgoing_interface.mac, ntohl(outgoing_interface.ip), arp_unknown_addr, ip);
     Packet arp_packet(sizeof(sr_arp_hdr_t));
     memcpy(arp_packet.data(), &arp, sizeof(sr_arp_hdr_t));
-    sendEthernetFrame(iface, broadcast_addr, ethertype_arp, arp_packet);
+    sendEthernetFrame(iface, eth_broadcast_addr, ethertype_arp, arp_packet);
 }
 
 void StaticRouter::sendArpReply(const mac_addr sender_mac, uint32_t sender_ip, const std::string& iface, const mac_addr& my_mac, uint32_t my_ip) {

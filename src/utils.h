@@ -19,6 +19,8 @@ inline const uint8_t icmp_code_net_unreachable = 0;
 inline const uint8_t icmp_code_host_unreachable = 1; 
 inline const uint8_t icmp_code_protocol_unreachable = 2; 
 inline const uint8_t icmp_code_port_unreachable = 3; 
+inline const mac_addr arp_unknown_addr = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
+inline const mac_addr eth_broadcast_addr = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 
 
 uint16_t ethertype(uint8_t* buf);

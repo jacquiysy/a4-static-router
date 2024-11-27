@@ -47,7 +47,7 @@ std::optional<RoutingEntry> RoutingTable::getRoutingEntry(ip_addr ip) {
     for (auto& entry : routingEntries) {
         print_addr_ip_int(entry.dest);
         spdlog::info("Mask is {:#010x}", entry.mask);
-        if ((entry.dest & entry.mask) == (htonl(ip) & entry.mask) && entry.mask >= longest_mask) {
+        if ((entry.dest & entry.mask) == (ip & entry.mask) && entry.mask >= longest_mask) {
             longest_mask = entry.mask;
             res = entry;
         }
