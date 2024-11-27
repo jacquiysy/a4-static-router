@@ -30,6 +30,7 @@ void ArpCache::loop() {
 void ArpCache::tick() {
     std::unique_lock lock(mutex);
     // TODO: Your code here
+    spdlog::info("-----------------------TICK----------------------");
     for(auto it = requests.begin(); it != requests.end();) {
         ArpRequest& request = it->second;
 
@@ -38,13 +39,14 @@ void ArpCache::tick() {
                 spdlog::warn("ARP request for IP {} failed after 7 retries. Sending ICMP Host Unreachable.", it->first);
 
                 for(auto& awaitingPacket : request.awaitingPackets) {
+                    spdlog::info("Send Icmp Host Unreachable for awaiting packet");
                     sendIcmpHostUnreachable(awaitingPacket.packet, awaitingPacket.iface);
                 }
 
                 it = requests.erase(it);
                 continue;
             }
-
+            spdlog::info("In Arp Cache, Send Arp Request");
             sendArpRequest(it->first);
             request.lastSent = std::chrono::steady_clock::now();
             request.timesSent++;
