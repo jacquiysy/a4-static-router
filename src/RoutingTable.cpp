@@ -40,12 +40,15 @@ RoutingTable::RoutingTable(const std::filesystem::path& routingTablePath) {
 
 std::optional<RoutingEntry> RoutingTable::getRoutingEntry(ip_addr ip) {
     // TODO: Your code below
+    uint32_t longest_mask = 0;
+    std::optional<RoutingEntry> res = std::nullopt;
     for (auto& entry : routingEntries) {
-        if ((entry.dest & entry.mask) == (ip & entry.mask)) {
-            return entry;
+        if ((entry.dest & entry.mask) == (ip & entry.mask) && entry.mask > longest_mask) {
+            longest_mask = entry.mask;
+            res = entry;
         }
     }
-    return std::nullopt; // Placeholder
+    return res; // Placeholder
 }
 
 RoutingInterface RoutingTable::getRoutingInterface(const std::string& iface) {
