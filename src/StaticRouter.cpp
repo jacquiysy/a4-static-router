@@ -26,6 +26,7 @@ void StaticRouter::handlePacket(std::vector<uint8_t> packet, std::string iface)
 
     // TODO: Your code below
     uint16_t ethType = ethertype(packet.data());
+    sr_ethernet_hdr_t* eth_hdr = reinterpret_cast<sr_ethernet_hdr_t*>(packet.data());
 
     spdlog::info("-----------------------Handle Packet----------------------");
     
@@ -122,7 +123,7 @@ void StaticRouter::handlePacket(std::vector<uint8_t> packet, std::string iface)
         } else {
             outgoing_iface = route->iface;
         }
-        sendIp(packet_to_send, outgoing_iface, iface, ip_to_send, ethertype_ip, mac_to_send);
+        sendIp(packet_to_send, outgoing_iface, iface, ip_to_send, ethertype_ip, mac_to_send, eth_hdr);
     }
 }
 
@@ -146,7 +147,7 @@ void StaticRouter::sendArpReply(const mac_addr sender_mac, uint32_t sender_ip, c
     sendEthernetFrame(iface, sender_mac, ethertype_arp, arp_packet);
 }
 
-void StaticRouter::sendIp(const Packet& packet, const std::string& out_iface, const std::string& in_iface, uint32_t ip, uint16_t ethType, std::optional<mac_addr> nextMac) {
+void StaticRouter::sendIp(const Packet& packet, const std::string& out_iface, const std::string& in_iface, uint32_t ip, uint16_t ethType, std::optional<mac_addr> nextMac, sr_ethernet_hdr_t* eth_hdr) {
     spdlog::info("Send IP");
     if (nextMac) {
         sendEthernetFrame(out_iface, *nextMac, ethType, packet);
@@ -154,10 +155,7 @@ void StaticRouter::sendIp(const Packet& packet, const std::string& out_iface, co
     }
     auto nextHopMac = arpCache->getEntry(ip);
     if (!nextHopMac) {
-        auto outgoing_interface = routingTable->getRoutingInterface(out_iface);
-        mac_addr srcMac = outgoing_interface.mac;
-        auto header = createEthernetHeader(srcMac, eth_broadcast_addr, ethType); // eth_broadcast_addr is actually unknown mac
-        auto frame = createEthernetFrame(header, packet.data(), packet.size());
+        auto frame = createEthernetFrame(*eth_hdr, packet.data(), packet.size());
         arpCache->queuePacket(ip, frame, in_iface);
     } else {
         sendEthernetFrame(out_iface, *nextHopMac, ethType, packet);
