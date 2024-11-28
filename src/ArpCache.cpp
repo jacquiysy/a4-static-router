@@ -74,10 +74,14 @@ void ArpCache::addEntry(uint32_t ip, const mac_addr& mac) {
         ArpRequest& request = it->second;
         // forward packet
         for(auto& awaitingPacket : request.awaitingPackets) {
+            // modify unknown mac to given mac
             Packet packet_to_send = awaitingPacket.packet;
+            sr_ethernet_hdr_t* eth_hdr = reinterpret_cast<sr_ethernet_hdr_t*>(packet_to_send.data());
+            memcpy(eth_hdr->ether_dhost, &mac, sizeof(mac_addr));
+            // find routing interface
             uint32_t ip_to_send = reinterpret_cast<sr_ip_hdr_t*>(packet_to_send.data())->ip_dst; // network order
             auto route = routingTable->getRoutingEntry(ip_to_send);
-            sendEthernetFrame(route->iface, mac, ethertype_ip, awaitingPacket.packet);
+            packetSender->sendPacket(packet_to_send, route->iface);
         }
 
         requests.erase(it);
@@ -142,15 +146,12 @@ void ArpCache::sendIcmpHostUnreachable(Packet& packet, const std::string& iface)
     auto ifaceInfo = routingTable->getRoutingInterface(iface);
     uint32_t src_ip = ntohl(ifaceInfo.ip);
     Packet icmp_packet = makeIcmpUnreachable(packet, icmp_code_host_unreachable, src_ip);
-    mac_addr dest_mac = make_mac_addr(reinterpret_cast<sr_ethernet_hdr_t*>(packet.data())->ether_shost);
-    sendEthernetFrame(iface, dest_mac, ethertype_ip, icmp_packet);
-}
-
-void ArpCache::sendEthernetFrame(const std::string& iface, const mac_addr& destMac, uint16_t ethType, const Packet& packet) {
+    mac_addr destMac = make_mac_addr(reinterpret_cast<sr_ethernet_hdr_t*>(packet.data())->ether_shost);
+    // add ether header
     spdlog::info("Create and Send Ethernet Frame");
     auto outgoing_interface = routingTable->getRoutingInterface(iface);
     mac_addr srcMac = outgoing_interface.mac;
-    auto header = createEthernetHeader(srcMac, destMac, ethType);
-    auto frame = createEthernetFrame(header, packet.data(), packet.size());
+    auto header = createEthernetHeader(srcMac, destMac, ethertype_ip);
+    auto frame = createEthernetFrame(header, icmp_packet.data(), icmp_packet.size());
     packetSender->sendPacket(frame, iface);
 }

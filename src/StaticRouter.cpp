@@ -137,16 +137,6 @@ bool StaticRouter::isForMe(uint32_t ip) {
 }
 
 // same level 
-// void StaticRouter::sendArpRequest(uint32_t ip, const std::string& iface) {
-//     spdlog::info("Send ARP Request");
-//     // const mac_addr broadcast_addr = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
-    
-//     auto outgoing_interface = routingTable->getRoutingInterface(iface);
-//     auto arp = createArpHeader(arp_op_request, outgoing_interface.mac, ntohl(outgoing_interface.ip), arp_unknown_addr, ip);
-//     Packet arp_packet(sizeof(sr_arp_hdr_t));
-//     memcpy(arp_packet.data(), &arp, sizeof(sr_arp_hdr_t));
-//     sendEthernetFrame(iface, eth_broadcast_addr, ethertype_arp, arp_packet);
-// }
 
 void StaticRouter::sendArpReply(const mac_addr sender_mac, uint32_t sender_ip, const std::string& iface, const mac_addr& my_mac, uint32_t my_ip) {
     spdlog::info("Send ARP Reply");
@@ -164,8 +154,11 @@ void StaticRouter::sendIp(const Packet& packet, const std::string& out_iface, co
     }
     auto nextHopMac = arpCache->getEntry(ip);
     if (!nextHopMac) {
-        arpCache->queuePacket(ip, packet, in_iface);
-        // sendArpRequest(ip, out_iface);
+        auto outgoing_interface = routingTable->getRoutingInterface(out_iface);
+        mac_addr srcMac = outgoing_interface.mac;
+        auto header = createEthernetHeader(srcMac, eth_broadcast_addr, ethType); // eth_broadcast_addr is actually unknown mac
+        auto frame = createEthernetFrame(header, packet.data(), packet.size());
+        arpCache->queuePacket(ip, frame, in_iface);
     } else {
         sendEthernetFrame(out_iface, *nextHopMac, ethType, packet);
     }
