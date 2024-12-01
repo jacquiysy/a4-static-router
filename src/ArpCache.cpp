@@ -80,7 +80,7 @@ void ArpCache::addEntry(uint32_t ip, const mac_addr& mac) {
             memcpy(eth_hdr->ether_dhost, &mac, sizeof(mac_addr));
             // find routing interface
             // uint32_t ip_to_send = reinterpret_cast<sr_ip_hdr_t*>(packet_to_send.data() + sizeof(sr_ethernet_hdr_t))->ip_dst; // network order
-            auto route = routingTable->getRoutingEntry(ip);
+            auto route = routingTable->getRoutingEntry(htonl(ip));
             auto outgoing_interface = routingTable->getRoutingInterface(route->iface);
             mac_addr srcMac = outgoing_interface.mac;
             memcpy(eth_hdr->ether_shost, &srcMac, sizeof(mac_addr));

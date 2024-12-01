@@ -223,7 +223,7 @@ sr_ip_hdr_t createIpHeader(uint16_t totalLen, uint8_t protocol, uint32_t srcIp, 
     ipHeader.ip_sum = cksum(&ipHeader, sizeof(sr_ip_hdr_t));
 
     spdlog::info("Create Ip Header");
-    // print_hdr_ip(reinterpret_cast<uint8_t*>(&ipHeader));
+    print_hdr_ip(reinterpret_cast<uint8_t*>(&ipHeader));
     return ipHeader;
 }
 
