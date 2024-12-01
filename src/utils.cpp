@@ -306,7 +306,7 @@ Packet makeIcmpEchoReply(Packet& incoming_packet) {
 Packet makeIcmpUnreachable(const Packet& incoming_packet, uint8_t code, uint32_t ip) {
     spdlog::info("Make Icmp Unreachable, code: {}", code);
 
-    const sr_ip_hdr_t* ip_hdr = reinterpret_cast<const sr_ip_hdr_t*>(incoming_packet.data() + ETHERNET_HEADER_SIZE);
+    const sr_ip_hdr_t* ip_hdr = reinterpret_cast<const sr_ip_hdr_t*>(incoming_packet.data());
     auto icmp_header = createIcmpType3Header(icmp_type_unreachable, code, incoming_packet);
     Packet icmp_packet(sizeof(sr_icmp_t3_hdr_t));
     memcpy(icmp_packet.data(), &icmp_header, sizeof(sr_icmp_t3_hdr_t));
