@@ -146,15 +146,22 @@ void ArpCache::sendArpRequest(uint32_t ip) {
 }
 
 void ArpCache::sendIcmpHostUnreachable(Packet& packet, const std::string& iface) {
-    auto ifaceInfo = routingTable->getRoutingInterface(iface);
-    uint32_t src_ip = ntohl(ifaceInfo.ip);
-    Packet icmp_packet = makeIcmpUnreachable(packet, icmp_code_host_unreachable, src_ip);
-    mac_addr destMac = make_mac_addr(reinterpret_cast<sr_ethernet_hdr_t*>(packet.data())->ether_shost);
     // add ether header
     spdlog::info("Create and Send Ethernet Frame");
     auto outgoing_interface = routingTable->getRoutingInterface(iface);
     mac_addr srcMac = outgoing_interface.mac;
+    mac_addr destMac = make_mac_addr(reinterpret_cast<sr_ethernet_hdr_t*>(packet.data())->ether_shost);
     auto header = createEthernetHeader(srcMac, destMac, ethertype_ip);
+    // remove original ether header and recover ip_sum
+    Packet ip_packet(packet.begin() + sizeof(sr_ethernet_hdr_t), packet.end());
+    sr_ip_hdr_t* ip_hdr = reinterpret_cast<sr_ip_hdr_t*>(ip_packet.data());
+    ip_hdr->ip_ttl++;
+    ip_hdr->ip_sum = 0;
+    ip_hdr->ip_sum = cksum(ip_hdr, sizeof(sr_ip_hdr_t));
+    // get src_ip
+    auto ifaceInfo = routingTable->getRoutingInterface(iface);
+    uint32_t src_ip = ntohl(ifaceInfo.ip);
+    Packet icmp_packet = makeIcmpUnreachable(ip_packet, icmp_code_host_unreachable, src_ip);
     auto frame = createEthernetFrame(header, icmp_packet.data(), icmp_packet.size());
     packetSender->sendPacket(frame, iface);
 }
